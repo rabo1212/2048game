@@ -221,37 +221,33 @@ const App: React.FC = () => {
 
     if (!moved) return;
 
-    setTiles(newTiles);
+    // 새 타일 바로 추가
+    let finalTiles = addRandomTile(newTiles);
 
-    // 애니메이션 후 새 타일 추가
-    setTimeout(() => {
-      let finalTiles = addRandomTile(newTiles);
+    if (finalTiles.some(t => t.value === 2048) && !won) {
+      setWon(true);
+    }
 
-      if (finalTiles.some(t => t.value === 2048) && !won) {
-        setWon(true);
+    // 한 번에 상태 업데이트
+    setTiles(finalTiles);
+    tilesRef.current = finalTiles;
+    
+    setScore(prev => {
+      const newScore = prev + totalPoints;
+      if (newScore > bestScore) {
+        setBestScore(newScore);
+        localStorage.setItem('kitsch-2048-best', newScore.toString());
       }
+      return newScore;
+    });
 
-      setTiles(finalTiles);
-      setScore(prev => {
-        const newScore = prev + totalPoints;
-        if (newScore > bestScore) {
-          setBestScore(newScore);
-          localStorage.setItem('kitsch-2048-best', newScore.toString());
-        }
-        return newScore;
-      });
+    if (!canMove(finalTiles)) {
+      setGameOver(true);
+    }
 
-      if (!canMove(finalTiles)) {
-        setGameOver(true);
-      }
-
-      if ('vibrate' in navigator && totalPoints > 0) {
-        navigator.vibrate(30);
-      }
-
-      // 플래그 초기화
-      setTiles(prev => prev.map(t => ({ ...t, isNew: false, isMerged: false })));
-    }, 150);
+    if ('vibrate' in navigator && totalPoints > 0) {
+      navigator.vibrate(30);
+    }
 
   }, [gameOver, bestScore, won]);
 
