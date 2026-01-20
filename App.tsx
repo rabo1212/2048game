@@ -1,76 +1,121 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 type ModalType = 'about' | 'howto' | 'privacy' | 'terms' | null;
 
 const GRID_SIZE = 4;
+const CELL_GAP = 6;
 
 // 파스텔톤 색상 매핑
 const TILE_COLORS: { [key: number]: { bg: string; text: string } } = {
-  0: { bg: '#EDE7E3', text: 'transparent' },
-  2: { bg: '#FFB6C1', text: '#7A2838' },      // 핑크
-  4: { bg: '#87CEEB', text: '#1E4D6B' },      // 하늘
-  8: { bg: '#DDA0DD', text: '#5B2C5B' },      // 보라
-  16: { bg: '#FFE066', text: '#6B5B00' },     // 노랑
-  32: { bg: '#FFB366', text: '#7A4400' },     // 오렌지
-  64: { bg: '#77DD77', text: '#2D5A2D' },     // 초록
-  128: { bg: '#B19CD9', text: '#3D2E5C' },    // 라벤더
-  256: { bg: '#6BC5D2', text: '#1F4A50' },    // 청록
-  512: { bg: '#F0A0B0', text: '#6B3040' },    // 로즈
-  1024: { bg: '#FF8888', text: '#5A1A1A' },   // 코랄
-  2048: { bg: '#FFD700', text: '#5A4800' },   // 골드
+  0: { bg: 'transparent', text: 'transparent' },
+  2: { bg: '#FFB6C1', text: '#7A2838' },
+  4: { bg: '#87CEEB', text: '#1E4D6B' },
+  8: { bg: '#DDA0DD', text: '#5B2C5B' },
+  16: { bg: '#FFE066', text: '#6B5B00' },
+  32: { bg: '#FFB366', text: '#7A4400' },
+  64: { bg: '#77DD77', text: '#2D5A2D' },
+  128: { bg: '#B19CD9', text: '#3D2E5C' },
+  256: { bg: '#6BC5D2', text: '#1F4A50' },
+  512: { bg: '#F0A0B0', text: '#6B3040' },
+  1024: { bg: '#FF8888', text: '#5A1A1A' },
+  2048: { bg: '#FFD700', text: '#5A4800' },
 };
 
+interface Tile {
+  id: string;
+  value: number;
+  row: number;
+  col: number;
+  isNew?: boolean;
+  isMerged?: boolean;
+}
+
 const App: React.FC = () => {
-  const [grid, setGrid] = useState<number[][]>([]);
+  const [tiles, setTiles] = useState<Tile[]>([]);
   const [score, setScore] = useState(0);
   const [bestScore, setBestScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [won, setWon] = useState(false);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
-  const [mergedCells, setMergedCells] = useState<Set<string>>(new Set());
-  const [newCells, setNewCells] = useState<Set<string>>(new Set());
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [cellSize, setCellSize] = useState(0);
+  
+  const containerRef = useRef<HTMLDivElement>(null);
+  const tileIdCounter = useRef(0);
 
-  // 빈 그리드 생성
-  const createEmptyGrid = (): number[][] => {
-    return Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(0));
+  // 셀 사이즈 계산
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        const containerWidth = containerRef.current.offsetWidth - 16;
+        const size = (containerWidth - CELL_GAP * (GRID_SIZE - 1)) / GRID_SIZE;
+        setCellSize(size);
+      }
+    };
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  // 새 타일 ID 생성
+  const generateId = () => {
+    tileIdCounter.current += 1;
+    return `tile-${tileIdCounter.current}`;
   };
 
-  // 랜덤 빈 셀에 타일 추가
-  const addRandomTile = (currentGrid: number[][]): { grid: number[][]; newCell: string | null } => {
-    const newGrid = currentGrid.map(row => [...row]);
-    const emptyCells: { row: number; col: number }[] = [];
-    
+  // 타일 배열을 그리드로 변환
+  const tilesToGrid = (tileList: Tile[]): number[][] => {
+    const grid: number[][] = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(0));
+    tileList.forEach(tile => {
+      if (tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE) {
+        grid[tile.row][tile.col] = tile.value;
+      }
+    });
+    return grid;
+  };
+
+  // 빈 셀 찾기
+  const getEmptyCells = (tileList: Tile[]): { row: number; col: number }[] => {
+    const grid = tilesToGrid(tileList);
+    const empty: { row: number; col: number }[] = [];
     for (let i = 0; i < GRID_SIZE; i++) {
       for (let j = 0; j < GRID_SIZE; j++) {
-        if (newGrid[i][j] === 0) {
-          emptyCells.push({ row: i, col: j });
+        if (grid[i][j] === 0) {
+          empty.push({ row: i, col: j });
         }
       }
     }
+    return empty;
+  };
+
+  // 랜덤 타일 추가
+  const addRandomTile = (tileList: Tile[]): Tile[] => {
+    const empty = getEmptyCells(tileList);
+    if (empty.length === 0) return tileList;
     
-    let newCell: string | null = null;
-    if (emptyCells.length > 0) {
-      const { row, col } = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-      newGrid[row][col] = Math.random() < 0.9 ? 2 : 4;
-      newCell = `${row}-${col}`;
-    }
+    const { row, col } = empty[Math.floor(Math.random() * empty.length)];
+    const newTile: Tile = {
+      id: generateId(),
+      value: Math.random() < 0.9 ? 2 : 4,
+      row,
+      col,
+      isNew: true,
+    };
     
-    return { grid: newGrid, newCell };
+    return [...tileList, newTile];
   };
 
   // 게임 초기화
   const initGame = useCallback(() => {
-    let newGrid = createEmptyGrid();
-    const result1 = addRandomTile(newGrid);
-    newGrid = result1.grid;
-    const result2 = addRandomTile(newGrid);
-    newGrid = result2.grid;
-    setGrid(newGrid);
+    tileIdCounter.current = 0;
+    let newTiles: Tile[] = [];
+    newTiles = addRandomTile(newTiles);
+    newTiles = addRandomTile(newTiles);
+    setTiles(newTiles);
     setScore(0);
     setGameOver(false);
     setWon(false);
-    setMergedCells(new Set());
-    setNewCells(new Set());
+    setIsAnimating(false);
   }, []);
 
   // 최고 점수 로드
@@ -81,123 +126,109 @@ const App: React.FC = () => {
   }, [initGame]);
 
   // 이동 가능 여부 체크
-  const canMove = (currentGrid: number[][]): boolean => {
+  const canMove = (tileList: Tile[]): boolean => {
+    const grid = tilesToGrid(tileList);
+    
     for (let i = 0; i < GRID_SIZE; i++) {
       for (let j = 0; j < GRID_SIZE; j++) {
-        if (currentGrid[i][j] === 0) return true;
-        if (j < GRID_SIZE - 1 && currentGrid[i][j] === currentGrid[i][j + 1]) return true;
-        if (i < GRID_SIZE - 1 && currentGrid[i][j] === currentGrid[i + 1][j]) return true;
+        if (grid[i][j] === 0) return true;
       }
     }
+    
+    for (let i = 0; i < GRID_SIZE; i++) {
+      for (let j = 0; j < GRID_SIZE; j++) {
+        if (j < GRID_SIZE - 1 && grid[i][j] === grid[i][j + 1]) return true;
+        if (i < GRID_SIZE - 1 && grid[i][j] === grid[i + 1][j]) return true;
+      }
+    }
+    
     return false;
   };
 
-  // 그리드 이동
+  // 이동 처리
   const move = useCallback((direction: 'up' | 'down' | 'left' | 'right') => {
-    if (gameOver) return;
+    if (gameOver || isAnimating) return;
 
-    let newGrid = grid.map(row => [...row]);
-    let totalScore = 0;
+    const currentTiles = tiles.map(t => ({ ...t, isNew: false, isMerged: false }));
+    
+    let newTiles: Tile[] = [];
+    let totalPoints = 0;
     let moved = false;
 
-    // 한 줄 왼쪽으로 밀기
-    const slideLeft = (row: number[]): { newRow: number[]; points: number } => {
-      let arr = row.filter(val => val !== 0);
-      let points = 0;
-      
-      for (let i = 0; i < arr.length - 1; i++) {
-        if (arr[i] === arr[i + 1]) {
-          arr[i] *= 2;
-          points += arr[i];
-          arr.splice(i + 1, 1);
-        }
-      }
-      
-      while (arr.length < GRID_SIZE) {
-        arr.push(0);
-      }
-      
-      return { newRow: arr, points };
-    };
+    const isHorizontal = direction === 'left' || direction === 'right';
+    const reverse = direction === 'right' || direction === 'down';
 
-    if (direction === 'left') {
-      for (let i = 0; i < GRID_SIZE; i++) {
-        const original = [...newGrid[i]];
-        const { newRow, points } = slideLeft(newGrid[i]);
-        newGrid[i] = newRow;
-        totalScore += points;
-        if (original.join(',') !== newRow.join(',')) moved = true;
-      }
-    } 
-    else if (direction === 'right') {
-      for (let i = 0; i < GRID_SIZE; i++) {
-        const original = [...newGrid[i]];
-        const reversed = [...newGrid[i]].reverse();
-        const { newRow, points } = slideLeft(reversed);
-        newGrid[i] = newRow.reverse();
-        totalScore += points;
-        if (original.join(',') !== newGrid[i].join(',')) moved = true;
-      }
-    } 
-    else if (direction === 'up') {
-      for (let col = 0; col < GRID_SIZE; col++) {
-        const column = [];
-        for (let row = 0; row < GRID_SIZE; row++) {
-          column.push(newGrid[row][col]);
+    for (let i = 0; i < GRID_SIZE; i++) {
+      // 해당 줄/열의 타일들 가져오기
+      let line = currentTiles.filter(t => isHorizontal ? t.row === i : t.col === i);
+      
+      if (line.length === 0) continue;
+
+      // 정렬
+      line.sort((a, b) => {
+        const aPos = isHorizontal ? a.col : a.row;
+        const bPos = isHorizontal ? b.col : b.row;
+        return reverse ? bPos - aPos : aPos - bPos;
+      });
+
+      // 이동 및 합치기
+      let pos = reverse ? GRID_SIZE - 1 : 0;
+      const step = reverse ? -1 : 1;
+      const processedLine: Tile[] = [];
+
+      for (let j = 0; j < line.length; j++) {
+        const tile = { ...line[j] };
+        const nextTile = line[j + 1];
+
+        const oldRow = tile.row;
+        const oldCol = tile.col;
+
+        if (nextTile && tile.value === nextTile.value) {
+          // 합치기
+          const mergedTile: Tile = {
+            id: generateId(),
+            value: tile.value * 2,
+            row: isHorizontal ? i : pos,
+            col: isHorizontal ? pos : i,
+            isMerged: true,
+          };
+          
+          processedLine.push(mergedTile);
+          totalPoints += tile.value * 2;
+          j++; // 다음 타일 스킵
+          
+          if (oldRow !== mergedTile.row || oldCol !== mergedTile.col) moved = true;
+        } else {
+          // 이동만
+          tile.row = isHorizontal ? i : pos;
+          tile.col = isHorizontal ? pos : i;
+          processedLine.push(tile);
+          
+          if (oldRow !== tile.row || oldCol !== tile.col) moved = true;
         }
-        const original = [...column];
-        const { newRow, points } = slideLeft(column);
-        totalScore += points;
-        for (let row = 0; row < GRID_SIZE; row++) {
-          newGrid[row][col] = newRow[row];
-        }
-        if (original.join(',') !== newRow.join(',')) moved = true;
+        
+        pos += step;
       }
-    } 
-    else if (direction === 'down') {
-      for (let col = 0; col < GRID_SIZE; col++) {
-        const column = [];
-        for (let row = 0; row < GRID_SIZE; row++) {
-          column.push(newGrid[row][col]);
-        }
-        const original = [...column];
-        const reversed = [...column].reverse();
-        const { newRow, points } = slideLeft(reversed);
-        const finalCol = newRow.reverse();
-        totalScore += points;
-        for (let row = 0; row < GRID_SIZE; row++) {
-          newGrid[row][col] = finalCol[row];
-        }
-        if (original.join(',') !== finalCol.join(',')) moved = true;
-      }
+
+      newTiles.push(...processedLine);
     }
 
-    if (moved) {
-      // 합쳐진 셀들 찾기
-      const merged = new Set<string>();
-      for (let i = 0; i < GRID_SIZE; i++) {
-        for (let j = 0; j < GRID_SIZE; j++) {
-          if (newGrid[i][j] > 0 && newGrid[i][j] !== grid[i][j]) {
-            // 값이 2배가 됐으면 합쳐진 것
-            if (grid[i][j] > 0 && newGrid[i][j] === grid[i][j] * 2) {
-              merged.add(`${i}-${j}`);
-            }
-          }
-        }
+    if (!moved) return;
+
+    setIsAnimating(true);
+    setTiles(newTiles);
+
+    // 애니메이션 후 새 타일 추가
+    setTimeout(() => {
+      let finalTiles = addRandomTile(newTiles);
+
+      if (finalTiles.some(t => t.value === 2048) && !won) {
+        setWon(true);
       }
-      setMergedCells(merged);
-      
-      const result = addRandomTile(newGrid);
-      newGrid = result.grid;
-      
-      // 새 셀 애니메이션
-      if (result.newCell) {
-        setNewCells(new Set([result.newCell]));
-      }
-      
-      setGrid(newGrid);
+
+      setTiles(finalTiles);
       setScore(prev => {
-        const newScore = prev + totalScore;
+        const newScore = prev + totalPoints;
         if (newScore > bestScore) {
           setBestScore(newScore);
           localStorage.setItem('kitsch-2048-best', newScore.toString());
@@ -205,21 +236,21 @@ const App: React.FC = () => {
         return newScore;
       });
 
-      if (!canMove(newGrid)) {
+      if (!canMove(finalTiles)) {
         setGameOver(true);
       }
 
-      if ('vibrate' in navigator) {
+      if ('vibrate' in navigator && totalPoints > 0) {
         navigator.vibrate(30);
       }
-      
-      // 애니메이션 후 초기화
+
       setTimeout(() => {
-        setMergedCells(new Set());
-        setNewCells(new Set());
-      }, 150);
-    }
-  }, [grid, gameOver, bestScore]);
+        setTiles(prev => prev.map(t => ({ ...t, isNew: false, isMerged: false })));
+        setIsAnimating(false);
+      }, 100);
+    }, 120);
+
+  }, [tiles, gameOver, isAnimating, bestScore, won]);
 
   // 키보드 이벤트
   useEffect(() => {
@@ -235,7 +266,7 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [move]);
 
-  // 터치/스와이프 상태
+  // 터치 이벤트
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -267,16 +298,32 @@ const App: React.FC = () => {
     setTouchStart(null);
   };
 
-  // 타일 스타일 가져오기
-  const getTileStyle = (value: number) => {
-    const colors = TILE_COLORS[value] || TILE_COLORS[2048];
-    
+  // 타일 위치 계산
+  const getTilePosition = (row: number, col: number) => {
     return {
+      top: row * (cellSize + CELL_GAP),
+      left: col * (cellSize + CELL_GAP),
+    };
+  };
+
+  // 타일 스타일
+  const getTileStyle = (tile: Tile) => {
+    const colors = TILE_COLORS[tile.value] || TILE_COLORS[2048];
+    const pos = getTilePosition(tile.row, tile.col);
+
+    return {
+      position: 'absolute' as const,
+      width: cellSize,
+      height: cellSize,
+      top: pos.top,
+      left: pos.left,
       backgroundColor: colors.bg,
       color: colors.text,
-      fontSize: value >= 1024 ? '1.1rem' : value >= 128 ? '1.4rem' : '1.75rem',
-      border: value === 0 ? 'none' : '3px solid rgba(0,0,0,0.1)',
-      boxShadow: value > 0 ? '0 4px 8px rgba(0,0,0,0.15)' : 'none',
+      fontSize: tile.value >= 1024 ? '1.1rem' : tile.value >= 128 ? '1.4rem' : '1.75rem',
+      transition: 'top 0.12s ease-out, left 0.12s ease-out, transform 0.15s ease-out',
+      transform: tile.isNew ? 'scale(0)' : tile.isMerged ? 'scale(1.1)' : 'scale(1)',
+      animation: tile.isNew ? 'popIn 0.15s ease-out 0.1s forwards' : undefined,
+      zIndex: tile.isMerged ? 10 : 1,
     };
   };
 
@@ -295,7 +342,7 @@ const App: React.FC = () => {
       {/* 헤더 */}
       <div className="w-full max-w-[320px] py-3 px-1">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-3xl font-black text-pink-400" style={{ fontFamily: 'system-ui' }}>
+          <h1 className="text-3xl font-black text-pink-400">
             2048
           </h1>
           <div className="flex gap-2">
@@ -325,6 +372,7 @@ const App: React.FC = () => {
 
       {/* 게임 그리드 */}
       <div 
+        ref={containerRef}
         className="relative rounded-2xl p-2 shadow-xl"
         style={{ 
           width: '90vw', 
@@ -334,40 +382,43 @@ const App: React.FC = () => {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
+        {/* 배경 셀 */}
         <div 
-          className="grid gap-1.5"
+          className="grid"
           style={{ 
             gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
+            gap: CELL_GAP,
             aspectRatio: '1',
           }}
         >
-          {grid.map((row, i) =>
-            row.map((value, j) => {
-              const cellKey = `${i}-${j}`;
-              const isMerged = mergedCells.has(cellKey);
-              const isNew = newCells.has(cellKey);
-              
-              return (
-                <div
-                  key={cellKey}
-                  className="aspect-square rounded-lg flex items-center justify-center font-black"
-                  style={{
-                    ...getTileStyle(value),
-                    transition: 'transform 0.12s ease-out',
-                    transform: isMerged ? 'scale(1.15)' : isNew ? 'scale(0.8)' : 'scale(1)',
-                    animation: isNew ? 'popIn 0.15s ease-out forwards' : undefined,
-                  }}
-                >
-                  {value > 0 && value}
-                </div>
-              );
-            })
-          )}
+          {Array(GRID_SIZE * GRID_SIZE).fill(0).map((_, i) => (
+            <div
+              key={i}
+              className="aspect-square rounded-lg"
+              style={{ backgroundColor: '#EDE7E3' }}
+            />
+          ))}
+        </div>
+
+        {/* 타일들 */}
+        <div 
+          className="absolute inset-2"
+          style={{ aspectRatio: '1' }}
+        >
+          {tiles.map(tile => (
+            <div
+              key={tile.id}
+              className="rounded-lg flex items-center justify-center font-black"
+              style={getTileStyle(tile)}
+            >
+              {tile.value}
+            </div>
+          ))}
         </div>
 
         {/* 게임 오버 */}
         {gameOver && (
-          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-3xl flex flex-col items-center justify-center">
+          <div className="absolute inset-0 bg-white/90 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center">
             <h2 className="text-2xl font-black text-pink-500 mb-2">Game Over!</h2>
             <p className="text-lg font-bold text-purple-500 mb-4">Score: {score}</p>
             <button
@@ -381,7 +432,7 @@ const App: React.FC = () => {
 
         {/* 승리 */}
         {won && !gameOver && (
-          <div className="absolute inset-0 bg-yellow-100/90 backdrop-blur-sm rounded-3xl flex flex-col items-center justify-center">
+          <div className="absolute inset-0 bg-yellow-100/95 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center">
             <h2 className="text-2xl font-black text-yellow-600 mb-2">🎉 You Win!</h2>
             <p className="text-lg font-bold text-yellow-700 mb-4">2048 달성!</p>
             <div className="flex gap-2">
@@ -454,8 +505,8 @@ const App: React.FC = () => {
               )}
               {activeModal === 'howto' && (
                 <>
-                  <p><strong>스와이프</strong>해서 타일을 이동시키세요.</p>
-                  <p><strong>같은 숫자</strong>가 만나면 합쳐져요!</p>
+                  <p><strong>스와이프</strong>해서 모든 타일을 한 방향으로 밀어요.</p>
+                  <p><strong>같은 숫자</strong>가 부딪히면 합쳐져요!</p>
                   <p>2 + 2 = 4, 4 + 4 = 8 ... → 2048!</p>
                   <p>더 이상 움직일 수 없으면 게임 오버!</p>
                 </>
