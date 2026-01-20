@@ -118,6 +118,7 @@ const App: React.FC = () => {
     newTiles = addRandomTile(newTiles);
     newTiles = addRandomTile(newTiles);
     setTiles(newTiles);
+    tilesRef.current = newTiles;
     setScore(0);
     setGameOver(false);
     setWon(false);
