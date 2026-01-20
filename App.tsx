@@ -27,6 +27,8 @@ const App: React.FC = () => {
   const [gameOver, setGameOver] = useState(false);
   const [won, setWon] = useState(false);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [mergedCells, setMergedCells] = useState<Set<string>>(new Set());
+  const [newCells, setNewCells] = useState<Set<string>>(new Set());
 
   // 빈 그리드 생성
   const createEmptyGrid = (): number[][] => {
@@ -34,7 +36,7 @@ const App: React.FC = () => {
   };
 
   // 랜덤 빈 셀에 타일 추가
-  const addRandomTile = (currentGrid: number[][]): number[][] => {
+  const addRandomTile = (currentGrid: number[][]): { grid: number[][]; newCell: string | null } => {
     const newGrid = currentGrid.map(row => [...row]);
     const emptyCells: { row: number; col: number }[] = [];
     
@@ -46,23 +48,29 @@ const App: React.FC = () => {
       }
     }
     
+    let newCell: string | null = null;
     if (emptyCells.length > 0) {
       const { row, col } = emptyCells[Math.floor(Math.random() * emptyCells.length)];
       newGrid[row][col] = Math.random() < 0.9 ? 2 : 4;
+      newCell = `${row}-${col}`;
     }
     
-    return newGrid;
+    return { grid: newGrid, newCell };
   };
 
   // 게임 초기화
   const initGame = useCallback(() => {
     let newGrid = createEmptyGrid();
-    newGrid = addRandomTile(newGrid);
-    newGrid = addRandomTile(newGrid);
+    const result1 = addRandomTile(newGrid);
+    newGrid = result1.grid;
+    const result2 = addRandomTile(newGrid);
+    newGrid = result2.grid;
     setGrid(newGrid);
     setScore(0);
     setGameOver(false);
     setWon(false);
+    setMergedCells(new Set());
+    setNewCells(new Set());
   }, []);
 
   // 최고 점수 로드
@@ -165,7 +173,28 @@ const App: React.FC = () => {
     }
 
     if (moved) {
-      newGrid = addRandomTile(newGrid);
+      // 합쳐진 셀들 찾기
+      const merged = new Set<string>();
+      for (let i = 0; i < GRID_SIZE; i++) {
+        for (let j = 0; j < GRID_SIZE; j++) {
+          if (newGrid[i][j] > 0 && newGrid[i][j] !== grid[i][j]) {
+            // 값이 2배가 됐으면 합쳐진 것
+            if (grid[i][j] > 0 && newGrid[i][j] === grid[i][j] * 2) {
+              merged.add(`${i}-${j}`);
+            }
+          }
+        }
+      }
+      setMergedCells(merged);
+      
+      const result = addRandomTile(newGrid);
+      newGrid = result.grid;
+      
+      // 새 셀 애니메이션
+      if (result.newCell) {
+        setNewCells(new Set([result.newCell]));
+      }
+      
       setGrid(newGrid);
       setScore(prev => {
         const newScore = prev + totalScore;
@@ -183,6 +212,12 @@ const App: React.FC = () => {
       if ('vibrate' in navigator) {
         navigator.vibrate(30);
       }
+      
+      // 애니메이션 후 초기화
+      setTimeout(() => {
+        setMergedCells(new Set());
+        setNewCells(new Set());
+      }, 150);
     }
   }, [grid, gameOver, bestScore]);
 
@@ -307,15 +342,26 @@ const App: React.FC = () => {
           }}
         >
           {grid.map((row, i) =>
-            row.map((value, j) => (
-              <div
-                key={`${i}-${j}`}
-                className="aspect-square rounded-lg flex items-center justify-center font-black"
-                style={getTileStyle(value)}
-              >
-                {value > 0 && value}
-              </div>
-            ))
+            row.map((value, j) => {
+              const cellKey = `${i}-${j}`;
+              const isMerged = mergedCells.has(cellKey);
+              const isNew = newCells.has(cellKey);
+              
+              return (
+                <div
+                  key={cellKey}
+                  className="aspect-square rounded-lg flex items-center justify-center font-black"
+                  style={{
+                    ...getTileStyle(value),
+                    transition: 'transform 0.12s ease-out',
+                    transform: isMerged ? 'scale(1.15)' : isNew ? 'scale(0.8)' : 'scale(1)',
+                    animation: isNew ? 'popIn 0.15s ease-out forwards' : undefined,
+                  }}
+                >
+                  {value > 0 && value}
+                </div>
+              );
+            })
           )}
         </div>
 
