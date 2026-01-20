@@ -147,7 +147,7 @@ const App: React.FC = () => {
 
   // 이동 처리
   const move = useCallback((direction: 'up' | 'down' | 'left' | 'right') => {
-    if (gameOver || isAnimating) return;
+    if (gameOver) return;
 
     const currentTiles = tiles.map(t => ({ ...t, isNew: false, isMerged: false }));
     
@@ -215,7 +215,6 @@ const App: React.FC = () => {
 
     if (!moved) return;
 
-    setIsAnimating(true);
     setTiles(newTiles);
 
     // 애니메이션 후 새 타일 추가
@@ -244,12 +243,11 @@ const App: React.FC = () => {
         navigator.vibrate(30);
       }
 
-      // 바로 애니메이션 해제
+      // 플래그 초기화
       setTiles(prev => prev.map(t => ({ ...t, isNew: false, isMerged: false })));
-      setIsAnimating(false);
     }, 150);
 
-  }, [tiles, gameOver, isAnimating, bestScore, won]);
+  }, [tiles, gameOver, bestScore, won]);
 
   // 키보드 이벤트
   useEffect(() => {
