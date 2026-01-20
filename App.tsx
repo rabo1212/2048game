@@ -251,19 +251,26 @@ const App: React.FC = () => {
 
   }, [gameOver, bestScore, won]);
 
-  // 키보드 이벤트
+  // move 함수를 ref로 저장
+  const moveRef = useRef(move);
+  useEffect(() => {
+    moveRef.current = move;
+  }, [move]);
+
+  // 키보드 이벤트 - 의존성 없이 한 번만 등록
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();
+        e.stopPropagation();
         const direction = e.key.replace('Arrow', '').toLowerCase() as 'up' | 'down' | 'left' | 'right';
-        move(direction);
+        moveRef.current(direction);
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [move]);
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, []);
 
   // 터치 이벤트 - useRef로 관리
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
