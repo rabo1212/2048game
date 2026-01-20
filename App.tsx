@@ -269,23 +269,23 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [move]);
 
-  // 터치 이벤트
-  const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
+  // 터치 이벤트 - useRef로 관리
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStart({
+    touchStartRef.current = {
       x: e.touches[0].clientX,
       y: e.touches[0].clientY,
-    });
+    };
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStart) return;
+    if (!touchStartRef.current) return;
     
     const touchEndX = e.changedTouches[0].clientX;
     const touchEndY = e.changedTouches[0].clientY;
-    const deltaX = touchEndX - touchStart.x;
-    const deltaY = touchEndY - touchStart.y;
+    const deltaX = touchEndX - touchStartRef.current.x;
+    const deltaY = touchEndY - touchStartRef.current.y;
     const minSwipe = 30;
 
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
@@ -298,7 +298,7 @@ const App: React.FC = () => {
       }
     }
     
-    setTouchStart(null);
+    touchStartRef.current = null;
   };
 
   // 타일 위치 계산
