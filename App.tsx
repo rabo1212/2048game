@@ -42,6 +42,12 @@ const App: React.FC = () => {
   
   const containerRef = useRef<HTMLDivElement>(null);
   const tileIdCounter = useRef(0);
+  const tilesRef = useRef<Tile[]>([]);
+
+  // tiles 변경시 ref도 업데이트
+  useEffect(() => {
+    tilesRef.current = tiles;
+  }, [tiles]);
 
   // 셀 사이즈 계산
   useEffect(() => {
@@ -149,7 +155,7 @@ const App: React.FC = () => {
   const move = useCallback((direction: 'up' | 'down' | 'left' | 'right') => {
     if (gameOver) return;
 
-    const currentTiles = tiles.map(t => ({ ...t, isNew: false, isMerged: false }));
+    const currentTiles = tilesRef.current.map(t => ({ ...t, isNew: false, isMerged: false }));
     
     let newTiles: Tile[] = [];
     let totalPoints = 0;
@@ -247,7 +253,7 @@ const App: React.FC = () => {
       setTiles(prev => prev.map(t => ({ ...t, isNew: false, isMerged: false })));
     }, 150);
 
-  }, [tiles, gameOver, bestScore, won]);
+  }, [gameOver, bestScore, won]);
 
   // 키보드 이벤트
   useEffect(() => {
