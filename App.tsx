@@ -244,11 +244,10 @@ const App: React.FC = () => {
         navigator.vibrate(30);
       }
 
-      setTimeout(() => {
-        setTiles(prev => prev.map(t => ({ ...t, isNew: false, isMerged: false })));
-        setIsAnimating(false);
-      }, 100);
-    }, 120);
+      // 바로 애니메이션 해제
+      setTiles(prev => prev.map(t => ({ ...t, isNew: false, isMerged: false })));
+      setIsAnimating(false);
+    }, 150);
 
   }, [tiles, gameOver, isAnimating, bestScore, won]);
 
