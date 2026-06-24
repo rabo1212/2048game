@@ -37,17 +37,41 @@ const App: React.FC = () => {
   const [gameOver, setGameOver] = useState(false);
   const [won, setWon] = useState(false);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
-  const [isAnimating, setIsAnimating] = useState(false);
   const [cellSize, setCellSize] = useState(0);
-  
+
   const containerRef = useRef<HTMLDivElement>(null);
   const tileIdCounter = useRef(0);
-  const tilesRef = useRef<Tile[]>([]);
 
-  // tiles 변경시 ref도 업데이트
+  // 모든 게임 상태를 ref로 관리 (stale closure 방지)
+  const gameStateRef = useRef({
+    tiles: [] as Tile[],
+    score: 0,
+    bestScore: 0,
+    gameOver: false,
+    won: false,
+    isMoving: false,
+  });
+
+  // 상태 변경 시 ref도 업데이트
   useEffect(() => {
-    tilesRef.current = tiles;
+    gameStateRef.current.tiles = tiles;
   }, [tiles]);
+
+  useEffect(() => {
+    gameStateRef.current.score = score;
+  }, [score]);
+
+  useEffect(() => {
+    gameStateRef.current.bestScore = bestScore;
+  }, [bestScore]);
+
+  useEffect(() => {
+    gameStateRef.current.gameOver = gameOver;
+  }, [gameOver]);
+
+  useEffect(() => {
+    gameStateRef.current.won = won;
+  }, [won]);
 
   // 셀 사이즈 계산
   useEffect(() => {
@@ -64,13 +88,13 @@ const App: React.FC = () => {
   }, []);
 
   // 새 타일 ID 생성
-  const generateId = () => {
+  const generateId = useCallback(() => {
     tileIdCounter.current += 1;
     return `tile-${tileIdCounter.current}`;
-  };
+  }, []);
 
   // 타일 배열을 그리드로 변환
-  const tilesToGrid = (tileList: Tile[]): number[][] => {
+  const tilesToGrid = useCallback((tileList: Tile[]): number[][] => {
     const grid: number[][] = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(0));
     tileList.forEach(tile => {
       if (tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE) {
@@ -78,10 +102,10 @@ const App: React.FC = () => {
       }
     });
     return grid;
-  };
+  }, []);
 
   // 빈 셀 찾기
-  const getEmptyCells = (tileList: Tile[]): { row: number; col: number }[] => {
+  const getEmptyCells = useCallback((tileList: Tile[]): { row: number; col: number }[] => {
     const grid = tilesToGrid(tileList);
     const empty: { row: number; col: number }[] = [];
     for (let i = 0; i < GRID_SIZE; i++) {
@@ -92,13 +116,13 @@ const App: React.FC = () => {
       }
     }
     return empty;
-  };
+  }, [tilesToGrid]);
 
   // 랜덤 타일 추가
-  const addRandomTile = (tileList: Tile[]): Tile[] => {
+  const addRandomTile = useCallback((tileList: Tile[]): Tile[] => {
     const empty = getEmptyCells(tileList);
     if (empty.length === 0) return tileList;
-    
+
     const { row, col } = empty[Math.floor(Math.random() * empty.length)];
     const newTile: Tile = {
       id: generateId(),
@@ -107,9 +131,29 @@ const App: React.FC = () => {
       col,
       isNew: true,
     };
-    
+
     return [...tileList, newTile];
-  };
+  }, [getEmptyCells, generateId]);
+
+  // 이동 가능 여부 체크
+  const canMove = useCallback((tileList: Tile[]): boolean => {
+    const grid = tilesToGrid(tileList);
+
+    for (let i = 0; i < GRID_SIZE; i++) {
+      for (let j = 0; j < GRID_SIZE; j++) {
+        if (grid[i][j] === 0) return true;
+      }
+    }
+
+    for (let i = 0; i < GRID_SIZE; i++) {
+      for (let j = 0; j < GRID_SIZE; j++) {
+        if (j < GRID_SIZE - 1 && grid[i][j] === grid[i][j + 1]) return true;
+        if (i < GRID_SIZE - 1 && grid[i][j] === grid[i + 1][j]) return true;
+      }
+    }
+
+    return false;
+  }, [tilesToGrid]);
 
   // 게임 초기화
   const initGame = useCallback(() => {
@@ -117,47 +161,46 @@ const App: React.FC = () => {
     let newTiles: Tile[] = [];
     newTiles = addRandomTile(newTiles);
     newTiles = addRandomTile(newTiles);
+
     setTiles(newTiles);
-    tilesRef.current = newTiles;
     setScore(0);
     setGameOver(false);
     setWon(false);
-    setIsAnimating(false);
-  }, []);
+
+    gameStateRef.current = {
+      tiles: newTiles,
+      score: 0,
+      bestScore: gameStateRef.current.bestScore,
+      gameOver: false,
+      won: false,
+      isMoving: false,
+    };
+  }, [addRandomTile]);
 
   // 최고 점수 로드
   useEffect(() => {
     const saved = localStorage.getItem('kitsch-2048-best');
-    if (saved) setBestScore(parseInt(saved));
+    if (saved) {
+      const best = parseInt(saved);
+      setBestScore(best);
+      gameStateRef.current.bestScore = best;
+    }
     initGame();
   }, [initGame]);
 
-  // 이동 가능 여부 체크
-  const canMove = (tileList: Tile[]): boolean => {
-    const grid = tilesToGrid(tileList);
-    
-    for (let i = 0; i < GRID_SIZE; i++) {
-      for (let j = 0; j < GRID_SIZE; j++) {
-        if (grid[i][j] === 0) return true;
-      }
-    }
-    
-    for (let i = 0; i < GRID_SIZE; i++) {
-      for (let j = 0; j < GRID_SIZE; j++) {
-        if (j < GRID_SIZE - 1 && grid[i][j] === grid[i][j + 1]) return true;
-        if (i < GRID_SIZE - 1 && grid[i][j] === grid[i + 1][j]) return true;
-      }
-    }
-    
-    return false;
-  };
-
-  // 이동 처리
+  // 이동 처리 (ref 기반으로 완전히 독립적)
   const move = useCallback((direction: 'up' | 'down' | 'left' | 'right') => {
-    if (gameOver) return;
+    const state = gameStateRef.current;
 
-    const currentTiles = tilesRef.current.map(t => ({ ...t, isNew: false, isMerged: false }));
-    
+    // 게임 오버거나 이동 중이면 무시
+    if (state.gameOver || state.isMoving) {
+      return;
+    }
+
+    state.isMoving = true;
+
+    const currentTiles = state.tiles.map(t => ({ ...t, isNew: false, isMerged: false }));
+
     let newTiles: Tile[] = [];
     let totalPoints = 0;
     let moved = false;
@@ -166,19 +209,16 @@ const App: React.FC = () => {
     const reverse = direction === 'right' || direction === 'down';
 
     for (let i = 0; i < GRID_SIZE; i++) {
-      // 해당 줄/열의 타일들 가져오기
       let line = currentTiles.filter(t => isHorizontal ? t.row === i : t.col === i);
-      
+
       if (line.length === 0) continue;
 
-      // 정렬
       line.sort((a, b) => {
         const aPos = isHorizontal ? a.col : a.row;
         const bPos = isHorizontal ? b.col : b.row;
         return reverse ? bPos - aPos : aPos - bPos;
       });
 
-      // 이동 및 합치기
       let pos = reverse ? GRID_SIZE - 1 : 0;
       const step = reverse ? -1 : 1;
       const processedLine: Tile[] = [];
@@ -191,7 +231,6 @@ const App: React.FC = () => {
         const oldCol = tile.col;
 
         if (nextTile && tile.value === nextTile.value) {
-          // 합치기
           const mergedTile: Tile = {
             id: generateId(),
             value: tile.value * 2,
@@ -199,50 +238,56 @@ const App: React.FC = () => {
             col: isHorizontal ? pos : i,
             isMerged: true,
           };
-          
+
           processedLine.push(mergedTile);
           totalPoints += tile.value * 2;
-          j++; // 다음 타일 스킵
-          
+          j++;
+
           if (oldRow !== mergedTile.row || oldCol !== mergedTile.col) moved = true;
+          else moved = true; // 합쳐졌으면 무조건 moved
         } else {
-          // 이동만
           tile.row = isHorizontal ? i : pos;
           tile.col = isHorizontal ? pos : i;
           processedLine.push(tile);
-          
+
           if (oldRow !== tile.row || oldCol !== tile.col) moved = true;
         }
-        
+
         pos += step;
       }
 
       newTiles.push(...processedLine);
     }
 
-    if (!moved) return;
+    if (!moved) {
+      state.isMoving = false;
+      return;
+    }
 
-    // 새 타일 바로 추가
+    // 새 타일 추가
     let finalTiles = addRandomTile(newTiles);
 
-    if (finalTiles.some(t => t.value === 2048) && !won) {
+    // 상태 업데이트
+    state.tiles = finalTiles;
+    setTiles(finalTiles);
+
+    if (finalTiles.some(t => t.value === 2048) && !state.won) {
+      state.won = true;
       setWon(true);
     }
 
-    // 한 번에 상태 업데이트
-    setTiles(finalTiles);
-    tilesRef.current = finalTiles;
-    
-    setScore(prev => {
-      const newScore = prev + totalPoints;
-      if (newScore > bestScore) {
-        setBestScore(newScore);
-        localStorage.setItem('kitsch-2048-best', newScore.toString());
-      }
-      return newScore;
-    });
+    const newScore = state.score + totalPoints;
+    state.score = newScore;
+    setScore(newScore);
+
+    if (newScore > state.bestScore) {
+      state.bestScore = newScore;
+      setBestScore(newScore);
+      localStorage.setItem('kitsch-2048-best', newScore.toString());
+    }
 
     if (!canMove(finalTiles)) {
+      state.gameOver = true;
       setGameOver(true);
     }
 
@@ -250,30 +295,29 @@ const App: React.FC = () => {
       navigator.vibrate(30);
     }
 
-  }, [gameOver, bestScore, won]);
+    // 애니메이션 후 이동 가능 상태로
+    setTimeout(() => {
+      state.isMoving = false;
+    }, 150);
 
-  // move 함수를 ref로 저장
-  const moveRef = useRef(move);
-  useEffect(() => {
-    moveRef.current = move;
-  }, [move]);
+  }, [generateId, addRandomTile, canMove]);
 
-  // 키보드 이벤트 - 의존성 없이 한 번만 등록
+  // 키보드 이벤트
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();
         e.stopPropagation();
         const direction = e.key.replace('Arrow', '').toLowerCase() as 'up' | 'down' | 'left' | 'right';
-        moveRef.current(direction);
+        move(direction);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, []);
+  }, [move]);
 
-  // 터치 이벤트 - useRef로 관리
+  // 터치 이벤트
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -285,7 +329,7 @@ const App: React.FC = () => {
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (!touchStartRef.current) return;
-    
+
     const touchEndX = e.changedTouches[0].clientX;
     const touchEndY = e.changedTouches[0].clientY;
     const deltaX = touchEndX - touchStartRef.current.x;
@@ -301,7 +345,7 @@ const App: React.FC = () => {
         move(deltaY > 0 ? 'down' : 'up');
       }
     }
-    
+
     touchStartRef.current = null;
   };
 
@@ -335,7 +379,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 flex flex-col items-center bg-gradient-to-b from-amber-50 to-pink-50 overflow-hidden select-none"
       style={{ touchAction: 'none' }}
     >
@@ -363,7 +407,7 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="flex items-center justify-between">
           <p className="text-[10px] font-bold text-pink-400">
             👆 스와이프해서 숫자를 합쳐요!
@@ -378,11 +422,11 @@ const App: React.FC = () => {
       </div>
 
       {/* 게임 그리드 */}
-      <div 
+      <div
         ref={containerRef}
         className="relative rounded-2xl p-2 shadow-xl"
-        style={{ 
-          width: '90vw', 
+        style={{
+          width: '90vw',
           maxWidth: '340px',
           backgroundColor: '#CDC1B4',
         }}
@@ -390,9 +434,9 @@ const App: React.FC = () => {
         onTouchEnd={handleTouchEnd}
       >
         {/* 배경 셀 */}
-        <div 
+        <div
           className="grid"
-          style={{ 
+          style={{
             gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
             gap: CELL_GAP,
             aspectRatio: '1',
@@ -408,7 +452,7 @@ const App: React.FC = () => {
         </div>
 
         {/* 타일들 */}
-        <div 
+        <div
           className="absolute inset-2"
           style={{ aspectRatio: '1' }}
         >
